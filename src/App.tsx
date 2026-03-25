@@ -10,6 +10,10 @@ export default function App() {
   const mapper = useLabMapper();
   const canvasRef = useRef<HTMLDivElement>(null);
   const dragPositionRef = useRef<{ id: string; x: number; y: number } | null>(null);
+  const pointerRef = useRef<{ clientX: number; clientY: number } | null>(null);
+  const panRef = useRef({ x: 0, y: 0 });
+  const zoomRef = useRef(1);
+  const dragOffsetRef = useRef({ x: 0, y: 0 });
 
   // Canvas state
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -46,6 +50,18 @@ export default function App() {
     setConnectionLabelDraft(selectedConnData?.label || '');
   }, [selectedConnData?.id, selectedConnData?.label]);
 
+  useEffect(() => {
+    panRef.current = pan;
+  }, [pan]);
+
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+
+  useEffect(() => {
+    dragOffsetRef.current = dragOffset;
+  }, [dragOffset]);
+
   // ── Node center for connections ──
   const nodeCenter = useCallback((node: CanvasNode) => ({
     x: (node.x + 80) * zoom + pan.x,
@@ -65,6 +81,17 @@ export default function App() {
     return `M ${x2} ${y2} L ${x2 - s * Math.cos(angle - Math.PI / 6)} ${y2 - s * Math.sin(angle - Math.PI / 6)} M ${x2} ${y2} L ${x2 - s * Math.cos(angle + Math.PI / 6)} ${y2 - s * Math.sin(angle + Math.PI / 6)}`;
   }
 
+  const updateDraggedNodeFromPointer = useCallback((clientX: number, clientY: number, nextPan = panRef.current) => {
+    if (!dragging || !canvasRef.current) return;
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = (clientX - rect.left - dragOffsetRef.current.x - nextPan.x) / zoomRef.current;
+    const y = (clientY - rect.top - dragOffsetRef.current.y - nextPan.y) / zoomRef.current;
+
+    dragPositionRef.current = { id: dragging, x, y };
+    mapper.setNodePositionLocal(dragging, x, y);
+  }, [dragging, mapper]);
+
   // ── Canvas mouse handlers ──
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
     if (e.target === canvasRef.current || (e.target as HTMLElement).classList.contains('canvas-bg')) {
@@ -78,15 +105,15 @@ export default function App() {
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent) => {
+    pointerRef.current = { clientX: e.clientX, clientY: e.clientY };
+
     if (isPanning) {
-      setPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
+      const nextPan = { x: e.clientX - panStart.x, y: e.clientY - panStart.y };
+      panRef.current = nextPan;
+      setPan(nextPan);
     }
     if (dragging) {
-      const rect = canvasRef.current!.getBoundingClientRect();
-      const x = (e.clientX - rect.left - dragOffset.x - pan.x) / zoom;
-      const y = (e.clientY - rect.top - dragOffset.y - pan.y) / zoom;
-      dragPositionRef.current = { id: dragging, x, y };
-      mapper.setNodePositionLocal(dragging, x, y);
+      updateDraggedNodeFromPointer(e.clientX, e.clientY);
     }
     if (connecting) {
       const rect = canvasRef.current!.getBoundingClientRect();
@@ -96,6 +123,7 @@ export default function App() {
 
   const handleCanvasMouseUp = () => {
     setIsPanning(false);
+    pointerRef.current = null;
     if (dragPositionRef.current) {
       const { id, x, y } = dragPositionRef.current;
       mapper.updateNodePosition(id, x, y);
@@ -138,10 +166,12 @@ export default function App() {
       return;
     }
     const rect = canvasRef.current!.getBoundingClientRect();
-    setDragOffset({
+    const nextOffset = {
       x: e.clientX - rect.left - pan.x - node.x * zoom,
       y: e.clientY - rect.top - pan.y - node.y * zoom,
-    });
+    };
+    dragOffsetRef.current = nextOffset;
+    setDragOffset(nextOffset);
     setDragging(node.id);
     setSelectedNode(node.id);
     setSelectedConnection(null);
@@ -178,6 +208,55 @@ export default function App() {
     el.addEventListener('wheel', handleWheel, { passive: false });
     return () => el.removeEventListener('wheel', handleWheel);
   }, []);
+
+  useEffect(() => {
+    if ((!dragging && !connecting) || !canvasRef.current) return;
+
+    const threshold = 80;
+    const maxSpeed = 18;
+    let frameId = 0;
+
+    const tick = () => {
+      const pointer = pointerRef.current;
+      const rect = canvasRef.current?.getBoundingClientRect();
+
+      if (pointer && rect) {
+        let scrollX = 0;
+        let scrollY = 0;
+
+        if (pointer.clientX < rect.left + threshold) {
+          scrollX = -((rect.left + threshold - pointer.clientX) / threshold) * maxSpeed;
+        } else if (pointer.clientX > rect.right - threshold) {
+          scrollX = ((pointer.clientX - (rect.right - threshold)) / threshold) * maxSpeed;
+        }
+
+        if (pointer.clientY < rect.top + threshold) {
+          scrollY = -((rect.top + threshold - pointer.clientY) / threshold) * maxSpeed;
+        } else if (pointer.clientY > rect.bottom - threshold) {
+          scrollY = ((pointer.clientY - (rect.bottom - threshold)) / threshold) * maxSpeed;
+        }
+
+        if (scrollX !== 0 || scrollY !== 0) {
+          const nextPan = {
+            x: panRef.current.x - scrollX,
+            y: panRef.current.y - scrollY,
+          };
+
+          panRef.current = nextPan;
+          setPan(nextPan);
+
+          if (dragging) {
+            updateDraggedNodeFromPointer(pointer.clientX, pointer.clientY, nextPan);
+          }
+        }
+      }
+
+      frameId = window.requestAnimationFrame(tick);
+    };
+
+    frameId = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [connecting, dragging, updateDraggedNodeFromPointer]);
 
   // ── Node shape styles ──
   function nodeShapeStyle(shape: string): React.CSSProperties {
@@ -246,6 +325,7 @@ export default function App() {
           <div><span className="help-key">Click</span> a node - view/edit details</div>
           <div><span className="help-key">Double-click</span> a node - rename it</div>
           <div><span className="help-key">Port</span> (right side) - drag to connect</div>
+          <div><span className="help-key">Drag near edge</span> - auto-scroll canvas</div>
           <div><span className="help-key">Scroll wheel</span> - pan canvas</div>
           <div><span className="help-key">Ctrl/Cmd + wheel</span> - zoom in/out</div>
           <div><span className="help-key">Drag</span> empty canvas - pan</div>
