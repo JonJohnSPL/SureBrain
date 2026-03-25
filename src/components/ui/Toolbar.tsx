@@ -9,6 +9,7 @@ interface ToolbarProps {
   visibleTypes: Set<EntityType>;
   onToggleType: (t: EntityType) => void;
   onExport: () => void;
+  onTidyLayout: () => void;
   onShowHelp: () => void;
   isSupabaseConfigured: boolean;
   zoom: number;
@@ -17,7 +18,7 @@ interface ToolbarProps {
 
 export function Toolbar({
   mode, onModeChange, nodeCount, connCount,
-  visibleTypes, onToggleType, onExport, onShowHelp,
+  visibleTypes, onToggleType, onExport, onTidyLayout, onShowHelp,
   isSupabaseConfigured, zoom, onZoomReset,
 }: ToolbarProps) {
   return (
@@ -65,6 +66,7 @@ export function Toolbar({
         <button className="btn" onClick={onZoomReset} title="Reset zoom">
           {Math.round(zoom * 100)}%
         </button>
+        <button className="btn" onClick={onTidyLayout}>Tidy</button>
         <button className="btn" onClick={onExport}>Export</button>
         <button className="btn btn--help" onClick={onShowHelp}>?</button>
         <span className="toolbar-stats">

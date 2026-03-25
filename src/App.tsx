@@ -109,6 +109,122 @@ export default function App() {
     return `M ${x2} ${y2} L ${x2 - s * Math.cos(angle - Math.PI / 6)} ${y2 - s * Math.sin(angle - Math.PI / 6)} M ${x2} ${y2} L ${x2 - s * Math.cos(angle + Math.PI / 6)} ${y2 - s * Math.sin(angle + Math.PI / 6)}`;
   }
 
+  const handleTidyLayout = useCallback(async () => {
+    if (mapper.nodes.length === 0) return;
+
+    const horizontalSpacing = 260;
+    const verticalSpacing = 130;
+    const groupGap = 180;
+    const startX = 120;
+    let baseY = 120;
+
+    const nodeMap = new Map(mapper.nodes.map(node => [node.id, node]));
+    const outgoing = new Map<string, string[]>();
+    const incoming = new Map<string, string[]>();
+
+    for (const node of mapper.nodes) {
+      outgoing.set(node.id, []);
+      incoming.set(node.id, []);
+    }
+
+    for (const conn of mapper.connections) {
+      outgoing.get(conn.from_entity_id)?.push(conn.to_entity_id);
+      incoming.get(conn.to_entity_id)?.push(conn.from_entity_id);
+    }
+
+    const byVisualOrder = (aId: string, bId: string) => {
+      const a = nodeMap.get(aId);
+      const b = nodeMap.get(bId);
+      if (!a || !b) return 0;
+      if (a.y !== b.y) return a.y - b.y;
+      if (a.x !== b.x) return a.x - b.x;
+      return a.label.localeCompare(b.label);
+    };
+
+    const rootIds = mapper.nodes
+      .filter(node => (incoming.get(node.id)?.length ?? 0) === 0)
+      .map(node => node.id)
+      .sort(byVisualOrder);
+
+    const scheduled = new Set(rootIds);
+    const remainingIds = mapper.nodes
+      .map(node => node.id)
+      .filter(id => !scheduled.has(id))
+      .sort((aId, bId) => {
+        const incomingDiff = (incoming.get(aId)?.length ?? 0) - (incoming.get(bId)?.length ?? 0);
+        return incomingDiff !== 0 ? incomingDiff : byVisualOrder(aId, bId);
+      });
+
+    const orderedRoots = [...rootIds, ...remainingIds];
+    const placed = new Set<string>();
+    const positions: Array<{ id: string; x: number; y: number }> = [];
+
+    for (const rootId of orderedRoots) {
+      if (placed.has(rootId)) continue;
+
+      const queue: Array<{ id: string; depth: number }> = [{ id: rootId, depth: 0 }];
+      const depthMap = new Map<string, number>();
+      const visitOrder = new Map<string, number>();
+      let visitIndex = 0;
+
+      while (queue.length > 0) {
+        const current = queue.shift();
+        if (!current) continue;
+
+        const existingDepth = depthMap.get(current.id);
+        if (existingDepth !== undefined && existingDepth <= current.depth) continue;
+
+        depthMap.set(current.id, current.depth);
+        if (!visitOrder.has(current.id)) {
+          visitOrder.set(current.id, visitIndex++);
+        }
+
+        const children = [...(outgoing.get(current.id) ?? [])].sort(byVisualOrder);
+        for (const childId of children) {
+          queue.push({ id: childId, depth: current.depth + 1 });
+        }
+      }
+
+      const componentNodeIds = [...depthMap.keys()];
+      if (componentNodeIds.length === 0) continue;
+
+      for (const nodeId of componentNodeIds) {
+        placed.add(nodeId);
+      }
+
+      const columns = componentNodeIds.reduce((map, nodeId) => {
+        const depth = depthMap.get(nodeId) ?? 0;
+        const column = map.get(depth) ?? [];
+        column.push(nodeId);
+        map.set(depth, column);
+        return map;
+      }, new Map<number, string[]>());
+
+      const maxColumnSize = Math.max(...[...columns.values()].map(column => column.length));
+
+      [...columns.entries()]
+        .sort(([aDepth], [bDepth]) => aDepth - bDepth)
+        .forEach(([depth, column]) => {
+          column
+            .sort((aId, bId) => {
+              const orderDiff = (visitOrder.get(aId) ?? 0) - (visitOrder.get(bId) ?? 0);
+              return orderDiff !== 0 ? orderDiff : byVisualOrder(aId, bId);
+            })
+            .forEach((nodeId, index) => {
+              positions.push({
+                id: nodeId,
+                x: startX + depth * horizontalSpacing,
+                y: baseY + index * verticalSpacing,
+              });
+            });
+        });
+
+      baseY += Math.max(1, maxColumnSize) * verticalSpacing + groupGap;
+    }
+
+    await mapper.updateManyNodePositions(positions);
+  }, [mapper]);
+
   const updateDraggedNodeFromPointer = useCallback((clientX: number, clientY: number, nextPan = panRef.current) => {
     if (!dragging || !canvasRef.current) return;
 
@@ -361,6 +477,7 @@ export default function App() {
           });
         }}
         onExport={mapper.exportJSON}
+        onTidyLayout={() => void handleTidyLayout()}
         onShowHelp={() => setShowHelp(!showHelp)}
         isSupabaseConfigured={mapper.isSupabaseConfigured}
         zoom={zoom}
@@ -382,6 +499,7 @@ export default function App() {
           <div><span className="help-key">Double-click</span> a node - rename it</div>
           <div><span className="help-key">Port</span> (right side) - drag to a node to connect</div>
           <div><span className="help-key">+/- button</span> on parent nodes - collapse or expand a branch</div>
+          <div><span className="help-key">Tidy</span> in toolbar - re-align the layout</div>
           <div><span className="help-key">Move near edge</span> - auto-scroll canvas</div>
           <div><span className="help-key">Scroll wheel</span> - pan canvas</div>
           <div><span className="help-key">Ctrl/Cmd + wheel</span> - zoom in/out</div>

@@ -120,6 +120,30 @@ export function useLabMapper() {
     }
   }, [isSupabaseConfigured, nodes, setNodePositionLocal]);
 
+  const updateManyNodePositions = useCallback(async (positions: Array<{ id: string; x: number; y: number }>) => {
+    if (positions.length === 0) return;
+
+    const positionMap = new Map(positions.map(position => [position.id, position]));
+
+    setNodes(prev => prev.map(node => {
+      const nextPosition = positionMap.get(node.id);
+      return nextPosition ? { ...node, x: nextPosition.x, y: nextPosition.y } : node;
+    }));
+
+    if (isSupabaseConfigured) {
+      await Promise.all(positions.map(async ({ id, x, y }) => {
+        const node = nodes.find(n => n.id === id);
+        if (!node) return;
+
+        const config = ENTITY_CONFIGS_OBJ[node.entityType];
+        await supabase
+          .from(config.tableName)
+          .update({ canvas_x: x, canvas_y: y })
+          .eq('id', id);
+      }));
+    }
+  }, [isSupabaseConfigured, nodes]);
+
   // ── Update node color ──
   const updateNodeColor = useCallback(async (id: string, color: string) => {
     setNodes(prev => prev.map(n => n.id === id ? { ...n, color } : n));
@@ -309,7 +333,7 @@ export function useLabMapper() {
     loading, error,
     loadAll,
     addNode, deleteNode,
-    setNodePositionLocal, updateNodePosition, updateNodeColor,
+    setNodePositionLocal, updateNodePosition, updateManyNodePositions, updateNodeColor,
     addConnection, deleteConnection, updateConnectionLabel,
     updateEntityData,
     exportJSON,
