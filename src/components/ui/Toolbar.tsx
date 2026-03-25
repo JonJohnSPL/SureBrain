@@ -24,7 +24,7 @@ export function Toolbar({
     <div className="toolbar">
       <div className="toolbar-left">
         <div className="toolbar-brand">
-          <span className="brand-icon">◈</span>
+          <span className="brand-icon">[]</span>
           SPL Lab Mapper
         </div>
 
@@ -33,13 +33,13 @@ export function Toolbar({
             className={`mode-btn ${mode === 'sequential' ? 'mode-btn--active mode-btn--seq' : ''}`}
             onClick={() => onModeChange('sequential')}
           >
-            → Sequential
+            Seq
           </button>
           <button
             className={`mode-btn ${mode === 'associative' ? 'mode-btn--active mode-btn--assoc' : ''}`}
             onClick={() => onModeChange('associative')}
           >
-            ↔ Associative
+            Assoc
           </button>
         </div>
       </div>
@@ -65,10 +65,10 @@ export function Toolbar({
         <button className="btn" onClick={onZoomReset} title="Reset zoom">
           {Math.round(zoom * 100)}%
         </button>
-        <button className="btn" onClick={onExport}>↓ Export</button>
+        <button className="btn" onClick={onExport}>Export</button>
         <button className="btn btn--help" onClick={onShowHelp}>?</button>
         <span className="toolbar-stats">
-          {nodeCount} nodes · {connCount} links
+          {nodeCount} nodes | {connCount} links
         </span>
         <span className={`status-dot ${isSupabaseConfigured ? 'status-dot--online' : 'status-dot--local'}`}
               title={isSupabaseConfigured ? 'Connected to Supabase' : 'Local mode'} />

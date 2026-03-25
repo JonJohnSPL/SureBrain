@@ -42,6 +42,26 @@ body {
   user-select: none;
 }
 
+.app-banner {
+  position: absolute;
+  top: 58px;
+  left: 16px;
+  z-index: 120;
+  max-width: 420px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  font-size: 11px;
+  line-height: 1.4;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+}
+
+.app-banner--error {
+  background: rgba(127, 29, 29, 0.92);
+  border-color: #991b1b;
+  color: #fecaca;
+}
+
 /* ── Toolbar ── */
 .toolbar {
   position: absolute;

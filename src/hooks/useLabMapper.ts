@@ -74,10 +74,18 @@ export function useLabMapper() {
         }
       }
 
-      const { data: connData } = await supabase.from('connections').select('*');
+      const { data: connData, error: connError } = await supabase.from('connections').select('*');
+
+      if (connError) {
+        console.error('Error fetching connections:', connError);
+      }
 
       setNodes(allNodes);
       setConnections(connData || []);
+
+      if (connError) {
+        setError(connError.message);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load data');
     } finally {
@@ -95,9 +103,12 @@ export function useLabMapper() {
   }, [nodes, connections, loading]);
 
   // ── Update node position ──
-  const updateNodePosition = useCallback(async (id: string, x: number, y: number) => {
+  const setNodePositionLocal = useCallback((id: string, x: number, y: number) => {
     setNodes(prev => prev.map(n => n.id === id ? { ...n, x, y } : n));
+  }, []);
 
+  const updateNodePosition = useCallback(async (id: string, x: number, y: number) => {
+    setNodePositionLocal(id, x, y);
     if (isSupabaseConfigured) {
       const node = nodes.find(n => n.id === id);
       if (!node) return;
@@ -107,7 +118,7 @@ export function useLabMapper() {
         .update({ canvas_x: x, canvas_y: y })
         .eq('id', id);
     }
-  }, [nodes]);
+  }, [isSupabaseConfigured, nodes, setNodePositionLocal]);
 
   // ── Update node color ──
   const updateNodeColor = useCallback(async (id: string, color: string) => {
@@ -298,7 +309,7 @@ export function useLabMapper() {
     loading, error,
     loadAll,
     addNode, deleteNode,
-    updateNodePosition, updateNodeColor,
+    setNodePositionLocal, updateNodePosition, updateNodeColor,
     addConnection, deleteConnection, updateConnectionLabel,
     updateEntityData,
     exportJSON,

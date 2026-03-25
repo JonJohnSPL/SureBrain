@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useLabMapper, ENTITY_CONFIGS } from './hooks/useLabMapper';
-import type { EntityType, ConnectionMode, CanvasNode, Connection } from './types/entities';
+import type { EntityType, ConnectionMode, CanvasNode } from './types/entities';
 import { DetailPanel } from './components/panels/DetailPanel';
 import { Toolbar } from './components/ui/Toolbar';
 import { AddNodeMenu } from './components/ui/AddNodeMenu';
@@ -9,6 +9,7 @@ import './styles/app.css';
 export default function App() {
   const mapper = useLabMapper();
   const canvasRef = useRef<HTMLDivElement>(null);
+  const dragPositionRef = useRef<{ id: string; x: number; y: number } | null>(null);
 
   // Canvas state
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -27,6 +28,7 @@ export default function App() {
   const [editingLabel, setEditingLabel] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [connectionLabelDraft, setConnectionLabelDraft] = useState('');
 
   // Filter state
   const [visibleTypes, setVisibleTypes] = useState<Set<EntityType>>(
@@ -39,6 +41,10 @@ export default function App() {
   const visibleNodes = mapper.nodes.filter(n => visibleTypes.has(n.entityType));
   const selectedNodeData = mapper.nodes.find(n => n.id === selectedNode);
   const selectedConnData = mapper.connections.find(c => c.id === selectedConnection);
+
+  useEffect(() => {
+    setConnectionLabelDraft(selectedConnData?.label || '');
+  }, [selectedConnData?.id, selectedConnData?.label]);
 
   // ── Node center for connections ──
   const nodeCenter = useCallback((node: CanvasNode) => ({
@@ -79,7 +85,8 @@ export default function App() {
       const rect = canvasRef.current!.getBoundingClientRect();
       const x = (e.clientX - rect.left - dragOffset.x - pan.x) / zoom;
       const y = (e.clientY - rect.top - dragOffset.y - pan.y) / zoom;
-      mapper.updateNodePosition(dragging, x, y);
+      dragPositionRef.current = { id: dragging, x, y };
+      mapper.setNodePositionLocal(dragging, x, y);
     }
     if (connecting) {
       const rect = canvasRef.current!.getBoundingClientRect();
@@ -89,6 +96,11 @@ export default function App() {
 
   const handleCanvasMouseUp = () => {
     setIsPanning(false);
+    if (dragPositionRef.current) {
+      const { id, x, y } = dragPositionRef.current;
+      mapper.updateNodePosition(id, x, y);
+      dragPositionRef.current = null;
+    }
     setDragging(null);
     if (connecting) {
       setConnecting(null);
@@ -177,10 +189,10 @@ export default function App() {
   if (mapper.loading) {
     return (
       <div className="loading-screen">
-        <div className="loading-icon">◈</div>
+        <div className="loading-icon">[]</div>
         <div>Loading SPL Lab Mapper...</div>
         {!mapper.isSupabaseConfigured && (
-          <div className="loading-hint">Running in local mode — configure Supabase for persistence</div>
+          <div className="loading-hint">Running in local mode - configure Supabase for persistence</div>
         )}
       </div>
     );
@@ -208,17 +220,23 @@ export default function App() {
         onZoomReset={() => setZoom(1)}
       />
 
+      {mapper.error && (
+        <div className="app-banner app-banner--error">
+          Data sync issue: {mapper.error}
+        </div>
+      )}
+
       {showHelp && (
         <div className="help-overlay">
-          <div className="help-title">SPL Lab Mapper — Controls</div>
-          <div><span className="help-key">Double-click</span> canvas → add entity menu</div>
-          <div><span className="help-key">Drag</span> a node → move it</div>
-          <div><span className="help-key">Click</span> a node → view/edit details</div>
-          <div><span className="help-key">Double-click</span> a node → rename it</div>
-          <div><span className="help-key">● port</span> (right side) → drag to connect</div>
-          <div><span className="help-key">Scroll wheel</span> → zoom in/out</div>
-          <div><span className="help-key">Drag</span> empty canvas → pan</div>
-          <div><span className="help-key">Right-click</span> canvas → add entity menu</div>
+          <div className="help-title">SPL Lab Mapper - Controls</div>
+          <div><span className="help-key">Double-click</span> canvas - add entity menu</div>
+          <div><span className="help-key">Drag</span> a node - move it</div>
+          <div><span className="help-key">Click</span> a node - view/edit details</div>
+          <div><span className="help-key">Double-click</span> a node - rename it</div>
+          <div><span className="help-key">Port</span> (right side) - drag to connect</div>
+          <div><span className="help-key">Scroll wheel</span> - zoom in/out</div>
+          <div><span className="help-key">Drag</span> empty canvas - pan</div>
+          <div><span className="help-key">Right-click</span> canvas - add entity menu</div>
           <div className="help-sub">Toggle entity types in the filter bar to show/hide layers.</div>
           <button className="btn" onClick={() => setShowHelp(false)}>Got it</button>
         </div>
@@ -290,7 +308,7 @@ export default function App() {
                   style={{ pointerEvents: 'auto', cursor: 'pointer' }}
                   onClick={(e) => { e.stopPropagation(); setSelectedConnection(conn.id); setSelectedNode(null); }}
                 >
-                  {conn.label || (isSeq ? '→' : '↔')}
+                  {conn.label || (isSeq ? '->' : '<->')}
                 </text>
               </g>
             );
@@ -401,7 +419,7 @@ export default function App() {
         {/* Empty state */}
         {mapper.nodes.length === 0 && (
           <div className="empty-state">
-            <div className="empty-icon">◈</div>
+            <div className="empty-icon">[]</div>
             <div className="empty-title">SPL Lab Mapper</div>
             <div className="empty-sub">Double-click or right-click to add your first entity</div>
             {!mapper.isSupabaseConfigured && (
@@ -437,7 +455,7 @@ export default function App() {
           <div className="conn-panel-nodes">
             <span className="conn-node-name">{mapper.nodes.find(n => n.id === selectedConnData.from_entity_id)?.label}</span>
             <span className={`conn-arrow ${selectedConnData.connection_type}`}>
-              {selectedConnData.connection_type === 'sequential' ? ' → ' : ' ↔ '}
+              {selectedConnData.connection_type === 'sequential' ? ' -> ' : ' <-> '}
             </span>
             <span className="conn-node-name">{mapper.nodes.find(n => n.id === selectedConnData.to_entity_id)?.label}</span>
           </div>
@@ -445,8 +463,9 @@ export default function App() {
             <label className="field-label">Label</label>
             <input
               className="field-input"
-              value={selectedConnData.label || ''}
-              onChange={(e) => mapper.updateConnectionLabel(selectedConnData.id, e.target.value)}
+              value={connectionLabelDraft}
+              onChange={(e) => setConnectionLabelDraft(e.target.value)}
+              onBlur={() => mapper.updateConnectionLabel(selectedConnData.id, connectionLabelDraft.trim())}
               placeholder="Describe this connection..."
             />
           </div>

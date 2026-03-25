@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import type { CanvasNode, Connection, EntityType } from '../../types/entities';
+import { useEffect, useState } from 'react';
+import type { CanvasNode, Connection } from '../../types/entities';
 import { ENTITY_CONFIGS } from '../../types/entities';
 
 const NODE_COLORS = [
@@ -7,6 +7,8 @@ const NODE_COLORS = [
   '#1B4965', '#A4133C', '#386641', '#5A189A',
   '#0B525B', '#9D4EDD', '#3A0CA3', '#E85D04',
 ];
+
+type FieldType = 'text' | 'number' | 'boolean' | 'select';
 
 interface DetailPanelProps {
   node: CanvasNode;
@@ -20,23 +22,58 @@ interface DetailPanelProps {
   onDeleteConnection: (id: string) => void;
 }
 
+interface FieldConfig {
+  label: string;
+  key: string;
+  value: unknown;
+  type?: FieldType;
+}
+
 export function DetailPanel({
   node, allNodes, connections,
   onClose, onDelete, onUpdateColor, onUpdateData,
   onSelectNode, onDeleteConnection,
 }: DetailPanelProps) {
   const config = ENTITY_CONFIGS[node.entityType];
-  const [notesValue, setNotesValue] = useState((node.data as any).notes || '');
+  const [draftValues, setDraftValues] = useState<Record<string, unknown>>(() => ({ ...node.data }));
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const handleNotesBlur = () => {
-    onUpdateData({ notes: notesValue });
+  useEffect(() => {
+    setDraftValues({ ...node.data });
+    setShowDeleteConfirm(false);
+  }, [node]);
+
+  const updateDraftValue = (key: string, value: unknown) => {
+    setDraftValues(prev => ({ ...prev, [key]: value }));
+  };
+
+  const commitField = (key: string, type: FieldType = 'text') => {
+    const rawValue = draftValues[key];
+
+    if (type === 'boolean') {
+      onUpdateData({ [key]: Boolean(rawValue) });
+      return;
+    }
+
+    if (type === 'number') {
+      if (rawValue === '' || rawValue === null || rawValue === undefined) {
+        onUpdateData({ [key]: null });
+        return;
+      }
+
+      const parsed = Number(rawValue);
+      onUpdateData({ [key]: Number.isNaN(parsed) ? null : parsed });
+      return;
+    }
+
+    const normalized = typeof rawValue === 'string' ? rawValue.trim() : rawValue;
+    onUpdateData({ [key]: normalized || null });
   };
 
   // Build entity-specific fields
   const renderFields = () => {
-    const data = node.data as any;
-    const fields: { label: string; key: string; value: any; type?: string }[] = [];
+    const data = node.data as Record<string, unknown>;
+    const fields: FieldConfig[] = [];
 
     switch (node.entityType) {
       case 'client':
@@ -55,7 +92,7 @@ export function DetailPanel({
           { label: 'Project Manager', key: 'project_manager', value: data.project_manager },
           { label: 'SPL Account Rep', key: 'spl_account_rep', value: data.spl_account_rep },
           { label: 'Turnaround SLA', key: 'turnaround_sla', value: data.turnaround_sla },
-          { label: 'Expected Volume', key: 'expected_sample_volume', value: data.expected_sample_volume },
+          { label: 'Expected Volume', key: 'expected_sample_volume', value: data.expected_sample_volume, type: 'number' },
         );
         break;
       case 'sample_site':
@@ -63,8 +100,8 @@ export function DetailPanel({
           { label: 'Site Type', key: 'site_type', value: data.site_type, type: 'select' },
           { label: 'State', key: 'state', value: data.state },
           { label: 'County/Basin', key: 'county_basin', value: data.county_basin },
-          { label: 'GPS Lat', key: 'gps_lat', value: data.gps_lat },
-          { label: 'GPS Lng', key: 'gps_lng', value: data.gps_lng },
+          { label: 'GPS Lat', key: 'gps_lat', value: data.gps_lat, type: 'number' },
+          { label: 'GPS Lng', key: 'gps_lng', value: data.gps_lng, type: 'number' },
           { label: 'H2S Expected', key: 'h2s_expected', value: data.h2s_expected, type: 'boolean' },
           { label: 'Active', key: 'active', value: data.active, type: 'boolean' },
         );
@@ -100,10 +137,10 @@ export function DetailPanel({
         fields.push(
           { label: 'Method ID', key: 'method_id', value: data.method_id },
           { label: 'Carbon Range', key: 'carbon_range', value: data.carbon_range, type: 'select' },
-          { label: 'Run Time (min)', key: 'run_time_minutes', value: data.run_time_minutes },
-          { label: 'Dup Tolerance', key: 'duplicate_tolerance', value: data.duplicate_tolerance },
+          { label: 'Run Time (min)', key: 'run_time_minutes', value: data.run_time_minutes, type: 'number' },
+          { label: 'Dup Tolerance', key: 'duplicate_tolerance', value: data.duplicate_tolerance, type: 'number' },
           { label: 'Cal Standard', key: 'calibration_standard', value: data.calibration_standard },
-          { label: 'Revision Year', key: 'revision_year', value: data.revision_year },
+          { label: 'Revision Year', key: 'revision_year', value: data.revision_year, type: 'number' },
         );
         break;
       case 'sample':
@@ -114,8 +151,8 @@ export function DetailPanel({
           { label: 'Status', key: 'sample_status', value: data.sample_status, type: 'select' },
           { label: 'Priority', key: 'priority', value: data.priority, type: 'select' },
           { label: 'Container', key: 'container_type', value: data.container_type, type: 'select' },
-          { label: 'Pressure (PSI)', key: 'pressure_psi', value: data.pressure_psi },
-          { label: 'Temp (°F)', key: 'temperature_f', value: data.temperature_f },
+          { label: 'Pressure (PSI)', key: 'pressure_psi', value: data.pressure_psi, type: 'number' },
+          { label: 'Temp (F)', key: 'temperature_f', value: data.temperature_f, type: 'number' },
         );
         break;
       case 'result':
@@ -136,16 +173,20 @@ export function DetailPanel({
           <label className="field-toggle">
             <input
               type="checkbox"
-              checked={!!field.value}
-              onChange={(e) => onUpdateData({ [field.key]: e.target.checked })}
+              checked={Boolean(draftValues[field.key])}
+              onChange={(e) => {
+                updateDraftValue(field.key, e.target.checked);
+                onUpdateData({ [field.key]: e.target.checked });
+              }}
             />
-            <span>{field.value ? 'Yes' : 'No'}</span>
+            <span>{draftValues[field.key] ? 'Yes' : 'No'}</span>
           </label>
         ) : (
           <input
             className="field-input"
-            value={field.value ?? ''}
-            onChange={(e) => onUpdateData({ [field.key]: e.target.value || null })}
+            value={(draftValues[field.key] as string | number | null | undefined) ?? ''}
+            onChange={(e) => updateDraftValue(field.key, e.target.value)}
+            onBlur={() => commitField(field.key, field.type)}
             placeholder={`Enter ${field.label.toLowerCase()}...`}
           />
         )}
@@ -160,7 +201,7 @@ export function DetailPanel({
           <span className="detail-badge" style={{ background: node.color }}>{config.icon}</span>
           <span className="detail-title">{node.label}</span>
         </div>
-        <button className="btn btn--close" onClick={onClose}>×</button>
+        <button className="btn btn--close" onClick={onClose}>x</button>
       </div>
 
       <div className="detail-type">{config.label}</div>
@@ -188,9 +229,9 @@ export function DetailPanel({
         <label className="field-label">Notes</label>
         <textarea
           className="field-textarea"
-          value={notesValue}
-          onChange={(e) => setNotesValue(e.target.value)}
-          onBlur={handleNotesBlur}
+          value={(draftValues.notes as string | undefined) || ''}
+          onChange={(e) => updateDraftValue('notes', e.target.value)}
+          onBlur={() => commitField('notes')}
           placeholder="Add notes..."
         />
       </div>
@@ -206,13 +247,13 @@ export function DetailPanel({
           return (
             <div key={conn.id} className="connection-row">
               <span className={`conn-type-icon ${isSeq ? 'seq' : 'assoc'}`}>
-                {isSeq ? '→' : '↔'}
+                {isSeq ? '->' : '<->'}
               </span>
               <span className="conn-other-label" onClick={() => onSelectNode(other.id)}>
                 {other.label}
               </span>
               {conn.label && <span className="conn-label-text">({conn.label})</span>}
-              <button className="conn-delete" onClick={() => onDeleteConnection(conn.id)}>✕</button>
+              <button className="conn-delete" onClick={() => onDeleteConnection(conn.id)}>x</button>
             </div>
           );
         })}

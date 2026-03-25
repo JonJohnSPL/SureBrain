@@ -52,7 +52,7 @@ export function AddNodeMenu({ x, y, onAdd, onClose }: AddNodeMenuProps) {
               placeholder={`Name this ${ENTITY_CONFIGS[selected].label.toLowerCase()}...`}
             />
             <div className="add-menu-actions">
-              <button className="btn" onClick={() => setSelected(null)}>← Back</button>
+              <button className="btn" onClick={() => setSelected(null)}>Back</button>
               <button className="btn btn--primary" onClick={handleAdd} disabled={!label.trim()}>
                 Add
               </button>
