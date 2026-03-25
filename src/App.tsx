@@ -136,6 +136,10 @@ export default function App() {
     }
   };
 
+  const handleCanvasMouseLeave = () => {
+    pointerRef.current = null;
+  };
+
   const handleCanvasDoubleClick = (e: React.MouseEvent) => {
     if (e.target === canvasRef.current || (e.target as HTMLElement).classList.contains('canvas-bg')) {
       const rect = canvasRef.current!.getBoundingClientRect();
@@ -210,7 +214,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if ((!dragging && !connecting) || !canvasRef.current) return;
+    if (!canvasRef.current) return;
 
     const threshold = 80;
     const maxSpeed = 18;
@@ -256,7 +260,7 @@ export default function App() {
 
     frameId = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(frameId);
-  }, [connecting, dragging, updateDraggedNodeFromPointer]);
+  }, [dragging, updateDraggedNodeFromPointer]);
 
   // ── Node shape styles ──
   function nodeShapeStyle(shape: string): React.CSSProperties {
@@ -325,7 +329,7 @@ export default function App() {
           <div><span className="help-key">Click</span> a node - view/edit details</div>
           <div><span className="help-key">Double-click</span> a node - rename it</div>
           <div><span className="help-key">Port</span> (right side) - drag to connect</div>
-          <div><span className="help-key">Drag near edge</span> - auto-scroll canvas</div>
+          <div><span className="help-key">Move near edge</span> - auto-scroll canvas</div>
           <div><span className="help-key">Scroll wheel</span> - pan canvas</div>
           <div><span className="help-key">Ctrl/Cmd + wheel</span> - zoom in/out</div>
           <div><span className="help-key">Drag</span> empty canvas - pan</div>
@@ -341,6 +345,7 @@ export default function App() {
         onMouseDown={handleCanvasMouseDown}
         onMouseMove={handleCanvasMouseMove}
         onMouseUp={handleCanvasMouseUp}
+        onMouseLeave={handleCanvasMouseLeave}
         onDoubleClick={handleCanvasDoubleClick}
         onContextMenu={handleContextMenu}
         style={{ cursor: isPanning ? 'grabbing' : connecting ? 'crosshair' : 'default' }}
