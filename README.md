@@ -24,7 +24,7 @@ Client → Client Project → Sample Site → Sample Tech → Sample → SPL Lab
 ### 1. Clone & Install
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/spl-lab-mapper.git
+git clone https://github.com/JonJohnSPL/spl-lab-mapper.git
 cd spl-lab-mapper
 npm install
 ```
