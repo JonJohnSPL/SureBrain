@@ -50,26 +50,41 @@ export default function App() {
     return map;
   }, new Map<string, string[]>());
 
-  const hiddenNodeIds = (() => {
-    const hidden = new Set<string>();
-    const stack = [...collapsedNodeIds];
+  const parentIdsByChild = mapper.connections.reduce((map, conn) => {
+    const parents = map.get(conn.to_entity_id) ?? [];
+    parents.push(conn.from_entity_id);
+    map.set(conn.to_entity_id, parents);
+    return map;
+  }, new Map<string, string[]>());
 
-    while (stack.length > 0) {
-      const currentId = stack.pop();
-      if (!currentId) continue;
+  const visibleNodeIds = (() => {
+    const visible = new Set<string>();
+    let changed = true;
 
-      for (const childId of childIdsByParent.get(currentId) ?? []) {
-        if (hidden.has(childId)) continue;
-        hidden.add(childId);
-        stack.push(childId);
+    while (changed) {
+      changed = false;
+
+      for (const node of mapper.nodes) {
+        if (visible.has(node.id)) continue;
+
+        const parentIds = parentIdsByChild.get(node.id) ?? [];
+        const isRoot = parentIds.length === 0;
+        const hasExpandedVisibleParent = parentIds.some(parentId =>
+          visible.has(parentId) && !collapsedNodeIds.has(parentId)
+        );
+
+        if (isRoot || hasExpandedVisibleParent) {
+          visible.add(node.id);
+          changed = true;
+        }
       }
     }
 
-    return hidden;
+    return visible;
   })();
 
   const visibleNodes = mapper.nodes.filter(
-    n => visibleTypes.has(n.entityType) && !hiddenNodeIds.has(n.id)
+    n => visibleTypes.has(n.entityType) && visibleNodeIds.has(n.id)
   );
   const selectedNodeData = mapper.nodes.find(n => n.id === selectedNode);
   const selectedConnData = mapper.connections.find(c => c.id === selectedConnection);
