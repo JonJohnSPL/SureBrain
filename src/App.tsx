@@ -86,12 +86,24 @@ export default function App() {
   const visibleNodes = mapper.nodes.filter(
     n => visibleTypes.has(n.entityType) && visibleNodeIds.has(n.id)
   );
+  const visibleNodeIdSet = new Set(visibleNodes.map(node => node.id));
+  const visibleConnections = mapper.connections.filter(conn =>
+    visibleNodeIdSet.has(conn.from_entity_id) &&
+    visibleNodeIdSet.has(conn.to_entity_id) &&
+    !collapsedNodeIds.has(conn.from_entity_id)
+  );
   const selectedNodeData = mapper.nodes.find(n => n.id === selectedNode);
   const selectedConnData = mapper.connections.find(c => c.id === selectedConnection);
 
   useEffect(() => {
     setConnectionLabelDraft(selectedConnData?.label || '');
   }, [selectedConnData?.id, selectedConnData?.label]);
+
+  useEffect(() => {
+    if (selectedConnection && !visibleConnections.some(conn => conn.id === selectedConnection)) {
+      setSelectedConnection(null);
+    }
+  }, [selectedConnection, visibleConnections]);
 
   useEffect(() => {
     panRef.current = pan;
@@ -547,7 +559,7 @@ export default function App() {
 
         {/* Connections SVG */}
         <svg className="connections-svg">
-          {mapper.connections.map(conn => {
+          {visibleConnections.map(conn => {
             const fromNode = visibleNodes.find(n => n.id === conn.from_entity_id);
             const toNode = visibleNodes.find(n => n.id === conn.to_entity_id);
             if (!fromNode || !toNode) return null;
