@@ -24,7 +24,7 @@ Client → Client Project → Sample Site → Sample Tech → Sample → SPL Lab
 ### 1. Clone & Install
 
 ```bash
-git clone https://github.com/JonJohn23/SureBrain.git
+git clone https://github.com/JonJohnSPL/SureBrain.git
 cd SureBrain
 npm install
 ```
