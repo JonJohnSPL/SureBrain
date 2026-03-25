@@ -160,8 +160,20 @@ export default function App() {
     if (!el) return;
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const delta = e.deltaY > 0 ? 0.95 : 1.05;
-      setZoom(z => Math.min(3, Math.max(0.2, z * delta)));
+
+      if (e.ctrlKey || e.metaKey) {
+        const delta = e.deltaY > 0 ? 0.95 : 1.05;
+        setZoom(z => Math.min(3, Math.max(0.2, z * delta)));
+        return;
+      }
+
+      const horizontalDelta = e.deltaX || (e.shiftKey ? e.deltaY : 0);
+      const verticalDelta = e.shiftKey ? 0 : e.deltaY;
+
+      setPan(prev => ({
+        x: prev.x - horizontalDelta,
+        y: prev.y - verticalDelta,
+      }));
     };
     el.addEventListener('wheel', handleWheel, { passive: false });
     return () => el.removeEventListener('wheel', handleWheel);
@@ -234,7 +246,8 @@ export default function App() {
           <div><span className="help-key">Click</span> a node - view/edit details</div>
           <div><span className="help-key">Double-click</span> a node - rename it</div>
           <div><span className="help-key">Port</span> (right side) - drag to connect</div>
-          <div><span className="help-key">Scroll wheel</span> - zoom in/out</div>
+          <div><span className="help-key">Scroll wheel</span> - pan canvas</div>
+          <div><span className="help-key">Ctrl/Cmd + wheel</span> - zoom in/out</div>
           <div><span className="help-key">Drag</span> empty canvas - pan</div>
           <div><span className="help-key">Right-click</span> canvas - add entity menu</div>
           <div className="help-sub">Toggle entity types in the filter bar to show/hide layers.</div>
