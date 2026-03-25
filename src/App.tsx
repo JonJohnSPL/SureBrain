@@ -139,10 +139,10 @@ export default function App() {
   const handleTidyLayout = useCallback(async () => {
     if (mapper.nodes.length === 0) return;
 
-    const horizontalSpacing = 175;
+    const horizontalSpacing = 210;
     const verticalSpacing = 88;
     const groupGap = 72;
-    const startX = 56;
+    const startX = 80;
     let baseY = 64;
 
     const nodeMap = new Map(mapper.nodes.map(node => [node.id, node]));
