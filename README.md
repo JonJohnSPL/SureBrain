@@ -24,8 +24,8 @@ Client → Client Project → Sample Site → Sample Tech → Sample → SPL Lab
 ### 1. Clone & Install
 
 ```bash
-git clone https://github.com/JonJohnSPL/spl-lab-mapper.git
-cd spl-lab-mapper
+git clone https://github.com/JonJohn23/SureBrain.git
+cd SureBrain
 npm install
 ```
 
@@ -54,7 +54,7 @@ Get these from: **Supabase Dashboard → Project Settings → API**
 npm run dev
 ```
 
-Open [http://localhost:5173/spl-lab-mapper/](http://localhost:5173/spl-lab-mapper/)
+Open [http://localhost:5173/SureBrain/](http://localhost:5173/SureBrain/)
 
 ---
 
@@ -135,7 +135,7 @@ Seed data in `002_seed_data.sql` pre-populates:
 ## Project Structure
 
 ```
-spl-lab-mapper/
+SureBrain/
 ├── .github/workflows/deploy.yml    # GitHub Pages CI/CD
 ├── supabase/migrations/
 │   ├── 001_initial_schema.sql      # Full database schema

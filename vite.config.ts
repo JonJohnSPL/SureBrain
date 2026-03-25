@@ -3,5 +3,5 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/spl-lab-mapper/', // GitHub Pages: https://JonJohnSPL.github.io/spl-lab-mapper/
+  base: '/SureBrain/', // GitHub Pages: https://JonJohn23.github.io/SureBrain/
 })
