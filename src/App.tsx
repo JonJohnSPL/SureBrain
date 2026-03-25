@@ -33,6 +33,7 @@ export default function App() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [connectionLabelDraft, setConnectionLabelDraft] = useState('');
+  const [collapsedNodeIds, setCollapsedNodeIds] = useState<Set<string>>(new Set());
 
   // Filter state
   const [visibleTypes, setVisibleTypes] = useState<Set<EntityType>>(
@@ -42,7 +43,34 @@ export default function App() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   // ── Computed ──
-  const visibleNodes = mapper.nodes.filter(n => visibleTypes.has(n.entityType));
+  const childIdsByParent = mapper.connections.reduce((map, conn) => {
+    const children = map.get(conn.from_entity_id) ?? [];
+    children.push(conn.to_entity_id);
+    map.set(conn.from_entity_id, children);
+    return map;
+  }, new Map<string, string[]>());
+
+  const hiddenNodeIds = (() => {
+    const hidden = new Set<string>();
+    const stack = [...collapsedNodeIds];
+
+    while (stack.length > 0) {
+      const currentId = stack.pop();
+      if (!currentId) continue;
+
+      for (const childId of childIdsByParent.get(currentId) ?? []) {
+        if (hidden.has(childId)) continue;
+        hidden.add(childId);
+        stack.push(childId);
+      }
+    }
+
+    return hidden;
+  })();
+
+  const visibleNodes = mapper.nodes.filter(
+    n => visibleTypes.has(n.entityType) && !hiddenNodeIds.has(n.id)
+  );
   const selectedNodeData = mapper.nodes.find(n => n.id === selectedNode);
   const selectedConnData = mapper.connections.find(c => c.id === selectedConnection);
 
@@ -140,6 +168,18 @@ export default function App() {
     pointerRef.current = null;
   };
 
+  const toggleNodeCollapse = useCallback((nodeId: string) => {
+    setCollapsedNodeIds(prev => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) {
+        next.delete(nodeId);
+      } else {
+        next.add(nodeId);
+      }
+      return next;
+    });
+  }, []);
+
   const handleCanvasDoubleClick = (e: React.MouseEvent) => {
     if (e.target === canvasRef.current || (e.target as HTMLElement).classList.contains('canvas-bg')) {
       const rect = canvasRef.current!.getBoundingClientRect();
@@ -159,16 +199,6 @@ export default function App() {
   // ── Node mouse handlers ──
   const handleNodeMouseDown = (e: React.MouseEvent, node: CanvasNode) => {
     e.stopPropagation();
-    if (connecting) {
-      mapper.addConnection(
-        connecting.type, connecting.id,
-        node.entityType, node.id,
-        mode
-      );
-      setConnecting(null);
-      setConnectPreview(null);
-      return;
-    }
     const rect = canvasRef.current!.getBoundingClientRect();
     const nextOffset = {
       x: e.clientX - rect.left - pan.x - node.x * zoom,
@@ -181,9 +211,31 @@ export default function App() {
     setSelectedConnection(null);
   };
 
+  const handleNodeMouseUp = async (e: React.MouseEvent, node: CanvasNode) => {
+    if (!connecting) return;
+
+    e.stopPropagation();
+
+    if (connecting.id !== node.id) {
+      await mapper.addConnection(
+        connecting.type,
+        connecting.id,
+        node.entityType,
+        node.id,
+        mode
+      );
+      setSelectedNode(node.id);
+      setSelectedConnection(null);
+    }
+
+    setConnecting(null);
+    setConnectPreview(null);
+  };
+
   const handleStartConnect = (e: React.MouseEvent, node: CanvasNode) => {
     e.stopPropagation();
     setConnecting({ id: node.id, type: node.entityType });
+    pointerRef.current = { clientX: e.clientX, clientY: e.clientY };
     const rect = canvasRef.current!.getBoundingClientRect();
     setConnectPreview({ x: e.clientX - rect.left, y: e.clientY - rect.top });
   };
@@ -328,7 +380,8 @@ export default function App() {
           <div><span className="help-key">Drag</span> a node - move it</div>
           <div><span className="help-key">Click</span> a node - view/edit details</div>
           <div><span className="help-key">Double-click</span> a node - rename it</div>
-          <div><span className="help-key">Port</span> (right side) - drag to connect</div>
+          <div><span className="help-key">Port</span> (right side) - drag to a node to connect</div>
+          <div><span className="help-key">+/- button</span> on parent nodes - collapse or expand a branch</div>
           <div><span className="help-key">Move near edge</span> - auto-scroll canvas</div>
           <div><span className="help-key">Scroll wheel</span> - pan canvas</div>
           <div><span className="help-key">Ctrl/Cmd + wheel</span> - zoom in/out</div>
@@ -431,12 +484,15 @@ export default function App() {
           const config = ENTITY_CONFIGS[node.entityType];
           const isSelected = selectedNode === node.id;
           const shapeStyle = nodeShapeStyle(node.shape);
+          const hasChildren = childIdsByParent.has(node.id);
+          const isCollapsed = collapsedNodeIds.has(node.id);
 
           return (
             <div
               key={node.id}
               className={`node ${isSelected ? 'node--selected' : ''} ${dragging === node.id ? 'node--dragging' : ''}`}
               onMouseDown={(e) => handleNodeMouseDown(e, node)}
+              onMouseUp={(e) => void handleNodeMouseUp(e, node)}
               onDoubleClick={(e) => {
                 e.stopPropagation();
                 setEditingLabel(node.id);
@@ -459,6 +515,21 @@ export default function App() {
               <span className="node-badge" style={{ background: `${node.color}cc` }}>
                 {config.icon}
               </span>
+
+              {hasChildren && (
+                <button
+                  type="button"
+                  className="node-toggle"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleNodeCollapse(node.id);
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  title={isCollapsed ? 'Expand children' : 'Collapse children'}
+                >
+                  {isCollapsed ? '+' : '-'}
+                </button>
+              )}
 
               {/* Label */}
               {editingLabel === node.id ? (
@@ -537,12 +608,15 @@ export default function App() {
           connections={mapper.connections.filter(c =>
             c.from_entity_id === selectedNodeData.id || c.to_entity_id === selectedNodeData.id
           )}
+          hasChildren={childIdsByParent.has(selectedNodeData.id)}
+          isCollapsed={collapsedNodeIds.has(selectedNodeData.id)}
           onClose={() => setSelectedNode(null)}
           onDelete={() => { mapper.deleteNode(selectedNodeData.id); setSelectedNode(null); }}
           onUpdateColor={(color) => mapper.updateNodeColor(selectedNodeData.id, color)}
           onUpdateData={(updates) => mapper.updateEntityData(selectedNodeData.id, selectedNodeData.entityType, updates)}
           onSelectNode={(id) => setSelectedNode(id)}
           onDeleteConnection={(id) => mapper.deleteConnection(id)}
+          onToggleCollapse={() => toggleNodeCollapse(selectedNodeData.id)}
         />
       )}
 

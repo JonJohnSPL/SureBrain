@@ -14,12 +14,15 @@ interface DetailPanelProps {
   node: CanvasNode;
   allNodes: CanvasNode[];
   connections: Connection[];
+  hasChildren: boolean;
+  isCollapsed: boolean;
   onClose: () => void;
   onDelete: () => void;
   onUpdateColor: (color: string) => void;
   onUpdateData: (updates: Record<string, unknown>) => void;
   onSelectNode: (id: string) => void;
   onDeleteConnection: (id: string) => void;
+  onToggleCollapse: () => void;
 }
 
 interface FieldConfig {
@@ -31,8 +34,9 @@ interface FieldConfig {
 
 export function DetailPanel({
   node, allNodes, connections,
+  hasChildren, isCollapsed,
   onClose, onDelete, onUpdateColor, onUpdateData,
-  onSelectNode, onDeleteConnection,
+  onSelectNode, onDeleteConnection, onToggleCollapse,
 }: DetailPanelProps) {
   const config = ENTITY_CONFIGS[node.entityType];
   const [draftValues, setDraftValues] = useState<Record<string, unknown>>(
@@ -225,6 +229,15 @@ export function DetailPanel({
 
       {/* Entity-specific fields */}
       {renderFields()}
+
+      {hasChildren && (
+        <div className="field-group">
+          <label className="field-label">Children</label>
+          <button className="btn" onClick={onToggleCollapse}>
+            {isCollapsed ? 'Expand children' : 'Collapse children'}
+          </button>
+        </div>
+      )}
 
       {/* Notes */}
       <div className="field-group">
