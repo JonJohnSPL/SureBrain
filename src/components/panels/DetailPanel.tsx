@@ -35,11 +35,13 @@ export function DetailPanel({
   onSelectNode, onDeleteConnection,
 }: DetailPanelProps) {
   const config = ENTITY_CONFIGS[node.entityType];
-  const [draftValues, setDraftValues] = useState<Record<string, unknown>>(() => ({ ...node.data }));
+  const [draftValues, setDraftValues] = useState<Record<string, unknown>>(
+    () => ({ ...(node.data as unknown as Record<string, unknown>) })
+  );
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
-    setDraftValues({ ...node.data });
+    setDraftValues({ ...(node.data as unknown as Record<string, unknown>) });
     setShowDeleteConfirm(false);
   }, [node]);
 
@@ -72,7 +74,7 @@ export function DetailPanel({
 
   // Build entity-specific fields
   const renderFields = () => {
-    const data = node.data as Record<string, unknown>;
+    const data = node.data as unknown as Record<string, unknown>;
     const fields: FieldConfig[] = [];
 
     switch (node.entityType) {
