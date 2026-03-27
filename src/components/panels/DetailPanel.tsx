@@ -232,9 +232,9 @@ export function DetailPanel({
 
       {hasChildren && (
         <div className="field-group">
-          <label className="field-label">Children</label>
+          <label className="field-label">Branch</label>
           <button className="btn" onClick={onToggleCollapse}>
-            {isCollapsed ? 'Expand children' : 'Collapse children'}
+            {isCollapsed ? 'Expand branch' : 'Collapse branch'}
           </button>
         </div>
       )}

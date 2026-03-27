@@ -50,6 +50,18 @@ export default function App() {
     return map;
   }, new Map<string, string[]>());
 
+  const branchNeighborIdsByNode = mapper.connections.reduce((map, conn) => {
+    const fromNeighbors = map.get(conn.from_entity_id) ?? [];
+    fromNeighbors.push(conn.to_entity_id);
+    map.set(conn.from_entity_id, fromNeighbors);
+
+    const toNeighbors = map.get(conn.to_entity_id) ?? [];
+    toNeighbors.push(conn.from_entity_id);
+    map.set(conn.to_entity_id, toNeighbors);
+
+    return map;
+  }, new Map<string, string[]>());
+
   const parentIdsByChild = mapper.connections.reduce((map, conn) => {
     const parents = map.get(conn.to_entity_id) ?? [];
     parents.push(conn.from_entity_id);
@@ -68,12 +80,13 @@ export default function App() {
         if (visible.has(node.id)) continue;
 
         const parentIds = parentIdsByChild.get(node.id) ?? [];
+        const branchNeighborIds = branchNeighborIdsByNode.get(node.id) ?? [];
         const isRoot = parentIds.length === 0;
-        const hasExpandedVisibleParent = parentIds.some(parentId =>
-          visible.has(parentId) && !collapsedNodeIds.has(parentId)
+        const hasExpandedVisibleBranch = branchNeighborIds.some(relatedNodeId =>
+          visible.has(relatedNodeId) && !collapsedNodeIds.has(relatedNodeId)
         );
 
-        if (isRoot || hasExpandedVisibleParent) {
+        if (isRoot || hasExpandedVisibleBranch) {
           visible.add(node.id);
           changed = true;
         }
@@ -90,7 +103,8 @@ export default function App() {
   const visibleConnections = mapper.connections.filter(conn =>
     visibleNodeIdSet.has(conn.from_entity_id) &&
     visibleNodeIdSet.has(conn.to_entity_id) &&
-    !collapsedNodeIds.has(conn.from_entity_id)
+    !collapsedNodeIds.has(conn.from_entity_id) &&
+    !collapsedNodeIds.has(conn.to_entity_id)
   );
   const selectedNodeData = mapper.nodes.find(n => n.id === selectedNode);
   const selectedConnData = mapper.connections.find(c => c.id === selectedConnection);
@@ -629,7 +643,7 @@ export default function App() {
           const config = ENTITY_CONFIGS[node.entityType];
           const isSelected = selectedNode === node.id;
           const shapeStyle = nodeShapeStyle(node.shape);
-          const hasChildren = childIdsByParent.has(node.id);
+          const hasChildren = branchNeighborIdsByNode.has(node.id);
           const isCollapsed = collapsedNodeIds.has(node.id);
 
           return (
@@ -753,7 +767,7 @@ export default function App() {
           connections={mapper.connections.filter(c =>
             c.from_entity_id === selectedNodeData.id || c.to_entity_id === selectedNodeData.id
           )}
-          hasChildren={childIdsByParent.has(selectedNodeData.id)}
+          hasChildren={branchNeighborIdsByNode.has(selectedNodeData.id)}
           isCollapsed={collapsedNodeIds.has(selectedNodeData.id)}
           onClose={() => setSelectedNode(null)}
           onDelete={() => { mapper.deleteNode(selectedNodeData.id); setSelectedNode(null); }}
