@@ -17,9 +17,10 @@ export default function App() {
 
   // Canvas state
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [selectionStart, setSelectionStart] = useState({ x: 0, y: 0 });
+  const [selectionBox, setSelectionBox] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
 
   // Interaction state
   const [mode, setMode] = useState<ConnectionMode>('associative');
@@ -28,6 +29,7 @@ export default function App() {
   const [connecting, setConnecting] = useState<{ id: string; type: EntityType } | null>(null);
   const [connectPreview, setConnectPreview] = useState<{ x: number; y: number } | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
   const [selectedConnection, setSelectedConnection] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -106,7 +108,7 @@ export default function App() {
     !collapsedNodeIds.has(conn.from_entity_id) &&
     !collapsedNodeIds.has(conn.to_entity_id)
   );
-  const selectedNodeData = mapper.nodes.find(n => n.id === selectedNode);
+  const selectedNodeData = selectedNode ? mapper.nodes.find(n => n.id === selectedNode) : undefined;
   const selectedConnData = mapper.connections.find(c => c.id === selectedConnection);
 
   useEffect(() => {
@@ -281,21 +283,31 @@ export default function App() {
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
     if (e.target === canvasRef.current || (e.target as HTMLElement).classList.contains('canvas-bg')) {
       setSelectedNode(null);
+      setSelectedNodeIds(new Set());
       setSelectedConnection(null);
       setEditingLabel(null);
       setContextMenu(null);
-      setIsPanning(true);
-      setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+      setIsSelecting(true);
+
+      const rect = canvasRef.current!.getBoundingClientRect();
+      const start = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      setSelectionStart(start);
+      setSelectionBox({ x: start.x, y: start.y, width: 0, height: 0 });
     }
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent) => {
     pointerRef.current = { clientX: e.clientX, clientY: e.clientY };
 
-    if (isPanning) {
-      const nextPan = { x: e.clientX - panStart.x, y: e.clientY - panStart.y };
-      panRef.current = nextPan;
-      setPan(nextPan);
+    if (isSelecting && canvasRef.current) {
+      const rect = canvasRef.current.getBoundingClientRect();
+      const current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      setSelectionBox({
+        x: Math.min(selectionStart.x, current.x),
+        y: Math.min(selectionStart.y, current.y),
+        width: Math.abs(current.x - selectionStart.x),
+        height: Math.abs(current.y - selectionStart.y),
+      });
     }
     if (dragging) {
       updateDraggedNodeFromPointer(e.clientX, e.clientY);
@@ -307,8 +319,32 @@ export default function App() {
   };
 
   const handleCanvasMouseUp = () => {
-    setIsPanning(false);
+    setIsSelecting(false);
     pointerRef.current = null;
+
+    if (selectionBox) {
+      const selectedIds = visibleNodes
+        .filter(node => {
+          const left = node.x * zoom + pan.x;
+          const top = node.y * zoom + pan.y;
+          const width = 160 * zoom;
+          const height = 48 * zoom;
+
+          return (
+            left < selectionBox.x + selectionBox.width &&
+            left + width > selectionBox.x &&
+            top < selectionBox.y + selectionBox.height &&
+            top + height > selectionBox.y
+          );
+        })
+        .map(node => node.id);
+
+      setSelectedNodeIds(new Set(selectedIds));
+      setSelectedConnection(null);
+      setSelectedNode(selectedIds.length === 1 ? selectedIds[0] : null);
+      setSelectionBox(null);
+    }
+
     if (dragPositionRef.current) {
       const { id, x, y } = dragPositionRef.current;
       mapper.updateNodePosition(id, x, y);
@@ -365,6 +401,7 @@ export default function App() {
     setDragOffset(nextOffset);
     setDragging(node.id);
     setSelectedNode(node.id);
+    setSelectedNodeIds(new Set([node.id]));
     setSelectedConnection(null);
   };
 
@@ -382,6 +419,7 @@ export default function App() {
         mode
       );
       setSelectedNode(node.id);
+      setSelectedNodeIds(new Set([node.id]));
       setSelectedConnection(null);
     }
 
@@ -544,7 +582,7 @@ export default function App() {
           <div><span className="help-key">Move near edge</span> - auto-scroll canvas</div>
           <div><span className="help-key">Scroll wheel</span> - pan canvas</div>
           <div><span className="help-key">Ctrl/Cmd + wheel</span> - zoom in/out</div>
-          <div><span className="help-key">Drag</span> empty canvas - pan</div>
+          <div><span className="help-key">Drag</span> empty canvas - box-select nodes</div>
           <div><span className="help-key">Right-click</span> canvas - add entity menu</div>
           <div className="help-sub">Toggle entity types in the filter bar to show/hide layers.</div>
           <button className="btn" onClick={() => setShowHelp(false)}>Got it</button>
@@ -560,7 +598,7 @@ export default function App() {
         onMouseLeave={handleCanvasMouseLeave}
         onDoubleClick={handleCanvasDoubleClick}
         onContextMenu={handleContextMenu}
-        style={{ cursor: isPanning ? 'grabbing' : connecting ? 'crosshair' : 'default' }}
+        style={{ cursor: isSelecting ? 'crosshair' : connecting ? 'crosshair' : 'default' }}
       >
         {/* Grid */}
         <div
@@ -591,7 +629,12 @@ export default function App() {
                   d={bezierPath(p1.x, p1.y, p2.x, p2.y)}
                   stroke="transparent" strokeWidth={16} fill="none"
                   style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
-                  onClick={(e) => { e.stopPropagation(); setSelectedConnection(conn.id); setSelectedNode(null); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedConnection(conn.id);
+                    setSelectedNode(null);
+                    setSelectedNodeIds(new Set());
+                  }}
                 />
                 <path
                   d={bezierPath(p1.x, p1.y, p2.x, p2.y)}
@@ -616,7 +659,12 @@ export default function App() {
                   fontFamily="'IBM Plex Sans', sans-serif"
                   fontWeight={500}
                   style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-                  onClick={(e) => { e.stopPropagation(); setSelectedConnection(conn.id); setSelectedNode(null); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedConnection(conn.id);
+                    setSelectedNode(null);
+                    setSelectedNodeIds(new Set());
+                  }}
                 >
                   {conn.label || (isSeq ? '->' : '<->')}
                 </text>
@@ -638,10 +686,22 @@ export default function App() {
           })()}
         </svg>
 
+        {selectionBox && (
+          <div
+            className="selection-box"
+            style={{
+              left: selectionBox.x,
+              top: selectionBox.y,
+              width: selectionBox.width,
+              height: selectionBox.height,
+            }}
+          />
+        )}
+
         {/* Nodes */}
         {visibleNodes.map(node => {
           const config = ENTITY_CONFIGS[node.entityType];
-          const isSelected = selectedNode === node.id;
+          const isSelected = selectedNodeIds.has(node.id);
           const shapeStyle = nodeShapeStyle(node.shape);
           const hasChildren = branchNeighborIdsByNode.has(node.id);
           const isCollapsed = collapsedNodeIds.has(node.id);
@@ -769,11 +829,21 @@ export default function App() {
           )}
           hasChildren={branchNeighborIdsByNode.has(selectedNodeData.id)}
           isCollapsed={collapsedNodeIds.has(selectedNodeData.id)}
-          onClose={() => setSelectedNode(null)}
-          onDelete={() => { mapper.deleteNode(selectedNodeData.id); setSelectedNode(null); }}
+          onClose={() => {
+            setSelectedNode(null);
+            setSelectedNodeIds(new Set());
+          }}
+          onDelete={() => {
+            mapper.deleteNode(selectedNodeData.id);
+            setSelectedNode(null);
+            setSelectedNodeIds(new Set());
+          }}
           onUpdateColor={(color) => mapper.updateNodeColor(selectedNodeData.id, color)}
           onUpdateData={(updates) => mapper.updateEntityData(selectedNodeData.id, selectedNodeData.entityType, updates)}
-          onSelectNode={(id) => setSelectedNode(id)}
+          onSelectNode={(id) => {
+            setSelectedNode(id);
+            setSelectedNodeIds(new Set([id]));
+          }}
           onDeleteConnection={(id) => mapper.deleteConnection(id)}
           onToggleCollapse={() => toggleNodeCollapse(selectedNodeData.id)}
         />
