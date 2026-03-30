@@ -107,6 +107,16 @@ export function useLabMapper() {
     setNodes(prev => prev.map(n => n.id === id ? { ...n, x, y } : n));
   }, []);
 
+  const setManyNodePositionsLocal = useCallback((positions: Array<{ id: string; x: number; y: number }>) => {
+    if (positions.length === 0) return;
+
+    const positionMap = new Map(positions.map(position => [position.id, position]));
+    setNodes(prev => prev.map(node => {
+      const nextPosition = positionMap.get(node.id);
+      return nextPosition ? { ...node, x: nextPosition.x, y: nextPosition.y } : node;
+    }));
+  }, []);
+
   const updateNodePosition = useCallback(async (id: string, x: number, y: number) => {
     setNodePositionLocal(id, x, y);
     if (isSupabaseConfigured) {
@@ -123,12 +133,7 @@ export function useLabMapper() {
   const updateManyNodePositions = useCallback(async (positions: Array<{ id: string; x: number; y: number }>) => {
     if (positions.length === 0) return;
 
-    const positionMap = new Map(positions.map(position => [position.id, position]));
-
-    setNodes(prev => prev.map(node => {
-      const nextPosition = positionMap.get(node.id);
-      return nextPosition ? { ...node, x: nextPosition.x, y: nextPosition.y } : node;
-    }));
+    setManyNodePositionsLocal(positions);
 
     if (isSupabaseConfigured) {
       await Promise.all(positions.map(async ({ id, x, y }) => {
@@ -142,7 +147,7 @@ export function useLabMapper() {
           .eq('id', id);
       }));
     }
-  }, [isSupabaseConfigured, nodes]);
+  }, [isSupabaseConfigured, nodes, setManyNodePositionsLocal]);
 
   // ── Update node color ──
   const updateNodeColor = useCallback(async (id: string, color: string) => {
@@ -333,7 +338,7 @@ export function useLabMapper() {
     loading, error,
     loadAll,
     addNode, deleteNode,
-    setNodePositionLocal, updateNodePosition, updateManyNodePositions, updateNodeColor,
+    setNodePositionLocal, setManyNodePositionsLocal, updateNodePosition, updateManyNodePositions, updateNodeColor,
     addConnection, deleteConnection, updateConnectionLabel,
     updateEntityData,
     exportJSON,

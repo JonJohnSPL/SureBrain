@@ -9,15 +9,18 @@ import './styles/app.css';
 export default function App() {
   const mapper = useLabMapper();
   const canvasRef = useRef<HTMLDivElement>(null);
-  const dragPositionRef = useRef<{ id: string; x: number; y: number } | null>(null);
+  const dragPositionsRef = useRef<Array<{ id: string; x: number; y: number }>>([]);
   const pointerRef = useRef<{ clientX: number; clientY: number } | null>(null);
   const panRef = useRef({ x: 0, y: 0 });
   const zoomRef = useRef(1);
   const dragOffsetRef = useRef({ x: 0, y: 0 });
+  const dragSelectionOffsetsRef = useRef<Array<{ id: string; offsetX: number; offsetY: number }>>([]);
 
   // Canvas state
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectionStart, setSelectionStart] = useState({ x: 0, y: 0 });
   const [selectionBox, setSelectionBox] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
@@ -275,12 +278,28 @@ export default function App() {
     const x = (clientX - rect.left - dragOffsetRef.current.x - nextPan.x) / zoomRef.current;
     const y = (clientY - rect.top - dragOffsetRef.current.y - nextPan.y) / zoomRef.current;
 
-    dragPositionRef.current = { id: dragging, x, y };
-    mapper.setNodePositionLocal(dragging, x, y);
+    const nextPositions = dragSelectionOffsetsRef.current.map(item => ({
+      id: item.id,
+      x: x + item.offsetX,
+      y: y + item.offsetY,
+    }));
+
+    dragPositionsRef.current = nextPositions;
+    mapper.setManyNodePositionsLocal(nextPositions);
   }, [dragging, mapper]);
 
   // ── Canvas mouse handlers ──
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 1) {
+      e.preventDefault();
+      setIsPanning(true);
+      setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+      setContextMenu(null);
+      return;
+    }
+
+    if (e.button !== 0) return;
+
     if (e.target === canvasRef.current || (e.target as HTMLElement).classList.contains('canvas-bg')) {
       setSelectedNode(null);
       setSelectedNodeIds(new Set());
@@ -298,6 +317,12 @@ export default function App() {
 
   const handleCanvasMouseMove = (e: React.MouseEvent) => {
     pointerRef.current = { clientX: e.clientX, clientY: e.clientY };
+
+    if (isPanning) {
+      const nextPan = { x: e.clientX - panStart.x, y: e.clientY - panStart.y };
+      panRef.current = nextPan;
+      setPan(nextPan);
+    }
 
     if (isSelecting && canvasRef.current) {
       const rect = canvasRef.current.getBoundingClientRect();
@@ -319,6 +344,7 @@ export default function App() {
   };
 
   const handleCanvasMouseUp = () => {
+    setIsPanning(false);
     setIsSelecting(false);
     pointerRef.current = null;
 
@@ -345,11 +371,11 @@ export default function App() {
       setSelectionBox(null);
     }
 
-    if (dragPositionRef.current) {
-      const { id, x, y } = dragPositionRef.current;
-      mapper.updateNodePosition(id, x, y);
-      dragPositionRef.current = null;
+    if (dragPositionsRef.current.length > 0) {
+      void mapper.updateManyNodePositions(dragPositionsRef.current);
+      dragPositionsRef.current = [];
     }
+    dragSelectionOffsetsRef.current = [];
     setDragging(null);
     if (connecting) {
       setConnecting(null);
@@ -359,6 +385,7 @@ export default function App() {
 
   const handleCanvasMouseLeave = () => {
     pointerRef.current = null;
+    setIsPanning(false);
   };
 
   const toggleNodeCollapse = useCallback((nodeId: string) => {
@@ -391,17 +418,32 @@ export default function App() {
 
   // ── Node mouse handlers ──
   const handleNodeMouseDown = (e: React.MouseEvent, node: CanvasNode) => {
+    if (e.button !== 0) return;
+
     e.stopPropagation();
     const rect = canvasRef.current!.getBoundingClientRect();
     const nextOffset = {
       x: e.clientX - rect.left - pan.x - node.x * zoom,
       y: e.clientY - rect.top - pan.y - node.y * zoom,
     };
+    const dragIds = selectedNodeIds.has(node.id) ? [...selectedNodeIds] : [node.id];
+    const leadNode = mapper.nodes.find(candidate => candidate.id === node.id);
+    if (!leadNode) return;
+
+    dragSelectionOffsetsRef.current = dragIds
+      .map(id => mapper.nodes.find(candidate => candidate.id === id))
+      .filter((candidate): candidate is CanvasNode => Boolean(candidate))
+      .map(candidate => ({
+        id: candidate.id,
+        offsetX: candidate.x - leadNode.x,
+        offsetY: candidate.y - leadNode.y,
+      }));
+
     dragOffsetRef.current = nextOffset;
     setDragOffset(nextOffset);
     setDragging(node.id);
-    setSelectedNode(node.id);
-    setSelectedNodeIds(new Set([node.id]));
+    setSelectedNode(dragIds.length === 1 ? node.id : null);
+    setSelectedNodeIds(new Set(dragIds));
     setSelectedConnection(null);
   };
 
@@ -581,6 +623,7 @@ export default function App() {
           <div><span className="help-key">Tidy</span> in toolbar - re-align the layout</div>
           <div><span className="help-key">Move near edge</span> - auto-scroll canvas</div>
           <div><span className="help-key">Scroll wheel</span> - pan canvas</div>
+          <div><span className="help-key">Middle mouse drag</span> - grab and move canvas</div>
           <div><span className="help-key">Ctrl/Cmd + wheel</span> - zoom in/out</div>
           <div><span className="help-key">Drag</span> empty canvas - box-select nodes</div>
           <div><span className="help-key">Right-click</span> canvas - add entity menu</div>
@@ -596,9 +639,12 @@ export default function App() {
         onMouseMove={handleCanvasMouseMove}
         onMouseUp={handleCanvasMouseUp}
         onMouseLeave={handleCanvasMouseLeave}
+        onAuxClick={(e) => {
+          if (e.button === 1) e.preventDefault();
+        }}
         onDoubleClick={handleCanvasDoubleClick}
         onContextMenu={handleContextMenu}
-        style={{ cursor: isSelecting ? 'crosshair' : connecting ? 'crosshair' : 'default' }}
+        style={{ cursor: isPanning ? 'grabbing' : isSelecting ? 'crosshair' : connecting ? 'crosshair' : 'default' }}
       >
         {/* Grid */}
         <div
